@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -23,19 +24,22 @@ func main() {
 	}
 	defer conn.Close()
 
+	//起始界面
+	clearConsole() //清空控制台
+	homeText()     //起始界面
+
 	//填写昵称
-	reader := bufio.NewReader(os.Stdin) //os.Stdin 代表标准输入（终端）
-	fmt.Print("\033[2J\033[3J")         // 清除屏幕
-	fmt.Print("\033[H")                 // 将光标移动到左上角
-	fmt.Println("欢迎来到EasyChat聊天室！")
-	fmt.Printf("请输入昵称:")
+	reader := bufio.NewReader(os.Stdin)
 	userName, err = reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("readString err=", err)
 	}
 	userName = strings.Trim(userName, " \r\n")
-	fmt.Println("已进入聊天室，请尽情畅聊！！！")
-	fmt.Println("------------------------------------------")
+
+	//加载界面
+	loadText()
+	//主界面
+	mainText()
 
 	//接收服务端广播
 	go func() {
@@ -88,4 +92,53 @@ func main() {
 		}
 		//fmt.Printf("发送%v字节数据", n)
 	}
+}
+func clearConsole() {
+	fmt.Print("\033[2J\033[3J") // 清除屏幕
+	fmt.Print("\033[H")         // 将光标移动到左上角
+}
+func logo() {
+	fmt.Printf(`╔═══╗─────────────╔═══╗╔╗───────╔╗─────╔═══╗
+║╔══╝─────────────║╔═╗║║║──────╔╝╚╗────║╔═╗║
+║╚══╗╔══╗╔══╗╔╗─╔╗║║─╚╝║╚═╗╔══╗╚╗╔╝────║║─╚╝╔══╗
+║╔══╝║╔╗║║══╣║║─║║║║─╔╗║╔╗║║╔╗║─║║─╔══╗║║╔═╗║╔╗║
+║╚══╗║╔╗║╠══║║╚═╝║║╚═╝║║║║║║╔╗║─║╚╗╚══╝║╚╩═║║╚╝║
+╚═══╝╚╝╚╝╚══╝╚═╗╔╝╚═══╝╚╝╚╝╚╝╚╝─╚═╝────╚═══╝╚══╝
+─────────────╔═╝║─────by:RationalDysaniaer
+─────────────╚══╝ 
+`)
+}
+func homeText() {
+	logo()
+	fmt.Println("\n *欢迎来到EasyChat聊天室(^_^)/\n")
+	fmt.Println(" *请输入昵称↓↓↓")
+	fmt.Printf(" >")
+}
+func loadText() {
+	totalSteps := 40 // 进度条总长度
+	var bar string
+	fmt.Println()
+	fmt.Printf("*正在进入聊天室，请稍等\n")
+	for i := 0; i <= totalSteps; i++ {
+		// 计算进度
+		progress := float64(i) / float64(totalSteps)
+		// 生成进度条字符串
+		bar = "["
+		for j := 0; j < i; j++ {
+			bar = bar + "#"
+		}
+		for j := 0; j < totalSteps-i; j++ {
+			bar = bar + "-"
+		}
+		bar = bar + "]"
+		fmt.Printf("\r %s %.2f%%", bar, progress*100)
+		//time.Sleep(time.Millisecond * 60)
+	}
+	time.Sleep(time.Second / 4)
+}
+
+func mainText() {
+	clearConsole()
+	fmt.Printf("EasyChat-Go    [currentUser:%v]\n", userName)
+	fmt.Printf("---------------------------------\n")
 }
