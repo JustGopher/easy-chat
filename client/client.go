@@ -50,7 +50,6 @@ func main() {
 				fmt.Println("服务器连接已关闭")
 				return
 			}
-			//fmt.Print(string(message[:n]))
 			msg := string(message[:n])
 
 			// 锁定用于同步
@@ -65,38 +64,42 @@ func main() {
 
 	//发送单行数据
 	for {
-		//fmt.Print("> ")
+		fmt.Print("> ")
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("readString err=", err)
 			continue
 		}
 		line = strings.Trim(line, " \r\n")
-		if line == "exit" {
-			fmt.Println("客户端退出..")
+		if line == "exit" || line == "EXIT" {
+			fmt.Println("退出聊天室...")
 			break
 		}
 
-		// 锁定，用于同步显示
-		mu.Lock()
-		// 发送并本地显示消息
+		//消息拼接
+		date := time.Now().Format("[15:04:05]")
+		massage := userName + date + ": " + line
+
+		// 本地显示消息
+		mu.Lock()                   // 锁定，用于同步显示
 		fmt.Printf("\033[1A\033[K") // 移动光标到上一行并清除当前行
-		fmt.Printf("%s: %s\n", userName, line)
-		fmt.Printf("> %s", "") // 再次打印输入提示符
+		fmt.Printf("%s\n", massage)
 		mu.Unlock()
 
 		// 发送给服务器
-		_, err = conn.Write([]byte(userName + ":" + line + "\n"))
+		_, err = conn.Write([]byte(massage + "\n"))
 		if err != nil {
 			fmt.Println("conn.Write err=", err)
 		}
 		//fmt.Printf("发送%v字节数据", n)
 	}
 }
+
 func clearConsole() {
 	fmt.Print("\033[2J\033[3J") // 清除屏幕
 	fmt.Print("\033[H")         // 将光标移动到左上角
 }
+
 func logo() {
 	fmt.Printf(`╔═══╗─────────────╔═══╗╔╗───────╔╗─────╔═══╗
 ║╔══╝─────────────║╔═╗║║║──────╔╝╚╗────║╔═╗║
@@ -108,12 +111,14 @@ func logo() {
 ─────────────╚══╝ 
 `)
 }
+
 func homeText() {
 	logo()
 	fmt.Println("\n *欢迎来到EasyChat聊天室(^_^)/\n")
 	fmt.Println(" *请输入昵称↓↓↓")
 	fmt.Printf(" >")
 }
+
 func loadText() {
 	totalSteps := 40 // 进度条总长度
 	var bar string
@@ -140,5 +145,5 @@ func loadText() {
 func mainText() {
 	clearConsole()
 	fmt.Printf("EasyChat-Go    [currentUser:%v]\n", userName)
-	fmt.Printf("---------------------------------\n")
+	fmt.Printf("-----------------------------------------\n")
 }
