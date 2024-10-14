@@ -16,13 +16,6 @@ var (
 )
 
 func main() {
-	//连接服务端
-	conn, err := net.Dial("tcp", "localhost:8088")
-	if err != nil {
-		fmt.Println("client dial err=", err)
-		return
-	}
-	defer conn.Close()
 
 	//起始界面
 	clearConsole() //清空控制台
@@ -30,11 +23,22 @@ func main() {
 
 	//填写昵称
 	reader := bufio.NewReader(os.Stdin)
-	userName, err = reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("readString err=", err)
-	}
+	userName, _ = reader.ReadString('\n')
 	userName = strings.Trim(userName, " \r\n")
+
+	//连接服务端
+	conn, err := net.Dial("tcp", "localhost:8088")
+	if err != nil {
+		fmt.Println("Client connection to server failed, err=", err)
+		return
+	}
+	defer conn.Close()
+
+	//发送昵称到服务端
+	_, err = conn.Write([]byte(userName))
+	if err != nil {
+		fmt.Println("conn.Write err=", err)
+	}
 
 	//加载界面
 	loadText()
@@ -64,7 +68,9 @@ func main() {
 
 	//发送单行数据
 	for {
+		mu.Lock()
 		fmt.Print("> ")
+		mu.Unlock()
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("readString err=", err)
