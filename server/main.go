@@ -73,14 +73,23 @@ func process(conn net.Conn) {
 	buf := make([]byte, 1024)
 	n, err := conn.Read(buf)
 	if err != nil {
-		wt.Lock()
 		fmt.Println("Read() err 该客户端接收昵称失败：", conn.RemoteAddr().String())
-		wt.Unlock()
 		return
 	}
+
+	nickName := string(buf[:n])
 	mu.Lock()
-	connections[conn] = string(buf[:n])
+	connections[conn] = nickName
 	mu.Unlock()
+	//锁的粒度过大会影响性能，将锁的范围限制在最小的必要区域会更好
+	//mu.Lock()
+	//connections[conn] = string(buf[:n])
+	//mu.Unlock()
+
+	//广播欢迎语
+	welcome := "Welcome " + connections[conn] + " joined the chat!\n"
+	sendMessage(nil, welcome)
+
 	//循环接收客户端发送的数据
 	for {
 		//等待客户端通过conn发送信息
@@ -88,26 +97,15 @@ func process(conn net.Conn) {
 		//fmt.Printf("服务器在等待客户端%s发送信息\n", conn.RemoteAddr().String())
 		n, err := conn.Read(buf)
 		if err != nil {
-			wt.Lock()
 			fmt.Println("Read() err 该客户端连接已断开", conn.RemoteAddr().String())
-			wt.Unlock()
 			return
 		}
-		//显示客户端发送的消息到终端
-		//fmt.Print(string(buf[:n]))
+		//显示客户端发送的消息到终端,此处无需加锁
 		message := string(buf[:n])
-		wt.Lock()
 		fmt.Print(message)
-		wt.Unlock()
 
-		// 广播消息
-		mu.Lock()
-		for c, _ := range connections {
-			if c != conn { // 不发送给自己和离线用户
-				_, _ = c.Write([]byte(message)) // 发送给其他客户端
-			}
-		}
-		mu.Unlock()
+		// 广播消息,无需加锁
+		sendMessage(conn, message)
 	}
 }
 
@@ -133,4 +131,16 @@ func logo() {
 func clearConsole() {
 	fmt.Print("\033[2J\033[3J") // 清除屏幕
 	fmt.Print("\033[H")         // 将光标移动到左上角
+}
+
+func sendMessage(conn net.Conn, message string) {
+	for c, _ := range connections {
+		if c != conn {
+			_, err := c.Write([]byte(message))
+			if err != nil {
+				fmt.Println("sendMessage failed,err = ", err)
+				return
+			}
+		}
+	}
 }

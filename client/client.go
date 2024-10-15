@@ -56,7 +56,6 @@ func main() {
 			}
 			msg := string(message[:n])
 
-			// 锁定用于同步
 			mu.Lock()
 			// 使用 ANSI 转义序列移动光标
 			fmt.Printf("\033[G\033[K") // 移动光标到上一行并清除当前行
@@ -68,9 +67,7 @@ func main() {
 
 	//发送单行数据
 	for {
-		mu.Lock()
 		fmt.Print("> ")
-		mu.Unlock()
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("readString err=", err)
@@ -87,7 +84,7 @@ func main() {
 		massage := userName + date + ": " + line
 
 		// 本地显示消息
-		mu.Lock()                   // 锁定，用于同步显示
+		mu.Lock()
 		fmt.Printf("\033[1A\033[K") // 移动光标到上一行并清除当前行
 		fmt.Printf("%s\n", massage)
 		mu.Unlock()
