@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 var (
-	connections = make(map[net.Conn]string) // 用于存储连接
-	mu          sync.Mutex                  // 保护连接的读写
-	wt          sync.Mutex
+	connections       = make(map[net.Conn]string) // 用于存储连接
+	connHeart         = make(map[net.Conn]time.Time)
+	mu                sync.Mutex         // 保护连接的读写
+	wt                sync.Mutex         // 确保连续输出的原子性
+	heartbeatInterval = 20 * time.Second // 心跳包检测间隔时间
+	timeoutInterval   = 90 * time.Second // 连接超时时间
 )
 
 func main() {
@@ -58,6 +62,7 @@ func process(conn net.Conn) {
 		//移除连接
 		mu.Lock()
 		delete(connections, conn)
+		delete(connHeart, conn)
 		mu.Unlock()
 
 		wt.Lock()
@@ -80,6 +85,7 @@ func process(conn net.Conn) {
 	nickName := string(buf[:n])
 	mu.Lock()
 	connections[conn] = nickName
+	connHeart[conn] = time.Now()
 	mu.Unlock()
 	//锁的粒度过大会影响性能，将锁的范围限制在最小的必要区域会更好
 	//mu.Lock()
@@ -89,6 +95,8 @@ func process(conn net.Conn) {
 	//广播欢迎语
 	welcome := "Welcome " + connections[conn] + " joined the chat!\n"
 	sendMessage(nil, welcome)
+
+	go heartbeatChecker(conn)
 
 	//循环接收客户端发送的数据
 	for {
@@ -102,10 +110,40 @@ func process(conn net.Conn) {
 		}
 		//显示客户端发送的消息到终端,此处无需加锁
 		message := string(buf[:n])
-		fmt.Print(message)
+		if message == "##PING" {
+			mu.Lock()
+			connHeart[conn] = time.Now() // 更新最后心跳时间
+			mu.Unlock()
+		} else {
+			fmt.Print(message)
+			// 广播消息,无需加锁
+			sendMessage(conn, message)
+		}
 
-		// 广播消息,无需加锁
-		sendMessage(conn, message)
+	}
+}
+
+// 心跳检测
+func heartbeatChecker(conn net.Conn) {
+	defer conn.Close()
+	defer func() {
+		mu.Lock()
+		delete(connections, conn)
+		delete(connHeart, conn)
+		mu.Unlock()
+	}()
+	for {
+		time.Sleep(heartbeatInterval)
+		mu.Lock()
+		_, exists := connHeart[conn]
+		mu.Unlock()
+		if !exists {
+			return // 如果连接已经被删除，退出
+		}
+		if time.Since(connHeart[conn]) > timeoutInterval {
+			fmt.Println("客户端超时未发送心跳包，断开连接:", conn.RemoteAddr().String())
+			return
+		}
 	}
 }
 

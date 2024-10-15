@@ -15,6 +15,8 @@ var (
 	mu       sync.Mutex // 用于保护输入和消息显示的同步
 )
 
+const heartbeatInterval = 30 * time.Second // 心跳包发送间隔
+
 func main() {
 
 	//起始界面
@@ -44,6 +46,9 @@ func main() {
 	loadText()
 	//主界面
 	mainText()
+
+	// 开启心跳包发送协程
+	go sendHeartbeat(conn)
 
 	//接收服务端广播
 	go func() {
@@ -95,6 +100,20 @@ func main() {
 			fmt.Println("conn.Write err=", err)
 		}
 		//fmt.Printf("发送%v字节数据", n)
+	}
+}
+
+// 定期发送心跳包
+func sendHeartbeat(conn net.Conn) {
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		_, err := conn.Write([]byte("##PING"))
+		if err != nil {
+			fmt.Println("发送心跳包失败，可能已断开连接")
+			return
+		}
 	}
 }
 
