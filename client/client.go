@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"easy-chat/proto"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -53,13 +55,15 @@ func main() {
 	//接收服务端广播
 	go func() {
 		for {
-			message := make([]byte, 1024)
-			n, err := conn.Read(message)
-			if err != nil {
-				fmt.Println("服务器连接已关闭")
+			reader := bufio.NewReader(conn)
+			msg, err := proto.Decode(reader)
+			if err == io.EOF {
 				return
 			}
-			msg := string(message[:n])
+			if err != nil {
+				fmt.Println("decode msg failed, err:", err)
+				return
+			}
 
 			mu.Lock()
 			// 使用 ANSI 转义序列移动光标
@@ -95,7 +99,12 @@ func main() {
 		mu.Unlock()
 
 		// 发送给服务器
-		_, err = conn.Write([]byte(massage + "\n"))
+		data, err := proto.Encode(massage + "\n")
+		if err != nil {
+			fmt.Println("encode msg failed, err:", err)
+			return
+		}
+		_, err = conn.Write(data)
 		if err != nil {
 			fmt.Println("conn.Write err=", err)
 		}
@@ -109,7 +118,13 @@ func sendHeartbeat(conn net.Conn) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		_, err := conn.Write([]byte("##PING"))
+		msg := "###PING"
+		data, err := proto.Encode(msg)
+		if err != nil {
+			fmt.Println("encode msg failed, err:", err)
+			return
+		}
+		_, err = conn.Write(data)
 		if err != nil {
 			fmt.Println("发送心跳包失败，可能已断开连接")
 			return

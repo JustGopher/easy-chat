@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
+	"easy-chat/proto"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -98,25 +101,33 @@ func process(conn net.Conn) {
 
 	go heartbeatChecker(conn)
 
+	reader := bufio.NewReader(conn)
 	//循环接收客户端发送的数据
 	for {
 		//等待客户端通过conn发送信息
 		//如果客户端没有write，那么协程就会阻塞在这里
 		//fmt.Printf("服务器在等待客户端%s发送信息\n", conn.RemoteAddr().String())
-		n, err := conn.Read(buf)
-		if err != nil {
-			fmt.Println("Read() err 该客户端连接已断开", conn.RemoteAddr().String())
+		//n, err := conn.Read(buf)
+		//if err != nil {
+		//	fmt.Println("Read() err 该客户端连接已断开", conn.RemoteAddr().String())
+		//	return
+		//}
+		//显示客户端发送的消息到终端,此处无需加锁
+		//message := string(buf[:n])
+		message, err := proto.Decode(reader)
+		if err == io.EOF {
 			return
 		}
-		//显示客户端发送的消息到终端,此处无需加锁
-		message := string(buf[:n])
-		if message == "##PING" {
+		if err != nil {
+			fmt.Println("decode msg failed, err:", err)
+			return
+		}
+		if message == "###PING" {
 			mu.Lock()
 			connHeart[conn] = time.Now() // 更新最后心跳时间
 			mu.Unlock()
 		} else {
 			fmt.Print(message)
-			// 广播消息,无需加锁
 			sendMessage(conn, message)
 		}
 
@@ -172,9 +183,14 @@ func clearConsole() {
 }
 
 func sendMessage(conn net.Conn, message string) {
-	for c, _ := range connections {
+	for c := range connections {
 		if c != conn {
-			_, err := c.Write([]byte(message))
+			data, err := proto.Encode(message)
+			if err != nil {
+				fmt.Println("encode msg failed, err:", err)
+				return
+			}
+			_, err = c.Write(data)
 			if err != nil {
 				fmt.Println("sendMessage failed,err = ", err)
 				return
