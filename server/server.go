@@ -12,11 +12,10 @@ import (
 
 var (
 	connections       = make(map[net.Conn]string) // 用于存储连接
-	connHeart         = make(map[net.Conn]time.Time)
-	mu                sync.Mutex         // 保护连接的读写
-	wt                sync.Mutex         // 确保连续输出的原子性
-	heartbeatInterval = 20 * time.Second // 心跳包检测间隔时间
-	timeoutInterval   = 90 * time.Second // 连接超时时间
+	rw                sync.RWMutex                // 保护连接的读写
+	wt                sync.Mutex                  // 确保连续输出的原子性
+	heartbeatInterval = 20 * time.Second          // 心跳包检测间隔时间
+	timeoutInterval   = 90 * time.Second          // 连接超时时间
 )
 
 func main() {
@@ -42,17 +41,7 @@ func main() {
 
 		//起一个协程
 		go process(conn)
-
-		wt.Lock()
-		println("---------------------------------------------------")
 		println("有客户端连接,客户端地址:", conn.RemoteAddr().String())
-		//当前所有用户
-		fmt.Println("当前用户列表：")
-		for n, v := range connections {
-			fmt.Printf("%v %v\n", n.RemoteAddr().String(), v)
-		}
-		println("---------------------------------------------------")
-		wt.Unlock()
 
 	}
 
@@ -63,10 +52,9 @@ func process(conn net.Conn) {
 	defer conn.Close()
 	defer func() {
 		//移除连接
-		mu.Lock()
+		rw.Lock()
 		delete(connections, conn)
-		delete(connHeart, conn)
-		mu.Unlock()
+		rw.Unlock()
 
 		wt.Lock()
 		println("---------------------------------------------------")
@@ -77,31 +65,59 @@ func process(conn net.Conn) {
 		println("---------------------------------------------------")
 		wt.Unlock()
 	}()
-	//接收昵称
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	if err != nil {
-		fmt.Println("Read() err 该客户端接收昵称失败：", conn.RemoteAddr().String())
-		return
+
+	reader := bufio.NewReader(conn)
+	var nickName string
+	for {
+		//接收昵称
+		nickName, _ = proto.Decode(reader)
+		//判断昵称是否重复
+		flag := true
+		data, _ := proto.Encode("true")
+		for _, v := range connections {
+			if v == nickName {
+				data, _ = proto.Encode("false")
+				flag = false
+				break
+			}
+		}
+		_, err := conn.Write(data)
+		if err != nil {
+			fmt.Println("sendMessage failed,err = ", err)
+			return
+		}
+		if flag == true {
+			break
+		}
 	}
 
-	nickName := string(buf[:n])
-	mu.Lock()
+	//添加连接
+	rw.Lock()
 	connections[conn] = nickName
-	connHeart[conn] = time.Now()
-	mu.Unlock()
+	rw.Unlock()
 	//锁的粒度过大会影响性能，将锁的范围限制在最小的必要区域会更好
 	//mu.Lock()
 	//connections[conn] = string(buf[:n])
 	//mu.Unlock()
 
+	wt.Lock()
+	println("---------------------------------------------------")
+	println("有用户进入聊天室，用户昵称:", nickName)
+	//当前所有用户
+	fmt.Println("当前用户列表：")
+	for n, v := range connections {
+		fmt.Printf("%v %v\n", n.RemoteAddr().String(), v)
+	}
+	println("---------------------------------------------------")
+	wt.Unlock()
+
 	//广播欢迎语
 	welcome := "Welcome " + connections[conn] + " joined the chat!\n"
 	sendMessage(nil, welcome)
 
-	go heartbeatChecker(conn)
+	lastTime := time.Now()
+	go heartbeatChecker(conn, &lastTime)
 
-	reader := bufio.NewReader(conn)
 	//循环接收客户端发送的数据
 	for {
 		//等待客户端通过conn发送信息
@@ -123,9 +139,7 @@ func process(conn net.Conn) {
 			return
 		}
 		if message == "###PING" {
-			mu.Lock()
-			connHeart[conn] = time.Now() // 更新最后心跳时间
-			mu.Unlock()
+			lastTime = time.Now() // 更新最后心跳时间
 		} else {
 			fmt.Print(message)
 			sendMessage(conn, message)
@@ -135,23 +149,23 @@ func process(conn net.Conn) {
 }
 
 // 心跳检测
-func heartbeatChecker(conn net.Conn) {
+func heartbeatChecker(conn net.Conn, lastTime *time.Time) {
 	defer conn.Close()
 	defer func() {
-		mu.Lock()
+		rw.Lock()
 		delete(connections, conn)
-		delete(connHeart, conn)
-		mu.Unlock()
+		rw.Unlock()
 	}()
+
 	for {
 		time.Sleep(heartbeatInterval)
-		mu.Lock()
-		_, exists := connHeart[conn]
-		mu.Unlock()
+		rw.RLock()
+		_, exists := connections[conn]
+		rw.RUnlock()
 		if !exists {
 			return // 如果连接已经被删除，退出
 		}
-		if time.Since(connHeart[conn]) > timeoutInterval {
+		if time.Since(*lastTime) > timeoutInterval {
 			fmt.Println("客户端超时未发送心跳包，断开连接:", conn.RemoteAddr().String())
 			return
 		}

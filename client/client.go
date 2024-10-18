@@ -21,15 +21,6 @@ const heartbeatInterval = 30 * time.Second // 心跳包发送间隔
 
 func main() {
 
-	//起始界面
-	clearConsole() //清空控制台
-	homeText()     //起始界面
-
-	//填写昵称
-	reader := bufio.NewReader(os.Stdin)
-	userName, _ = reader.ReadString('\n')
-	userName = strings.Trim(userName, " \r\n")
-
 	//连接服务端
 	conn, err := net.Dial("tcp", "localhost:8088")
 	if err != nil {
@@ -38,10 +29,41 @@ func main() {
 	}
 	defer conn.Close()
 
-	//发送昵称到服务端
-	_, err = conn.Write([]byte(userName))
-	if err != nil {
-		fmt.Println("conn.Write err=", err)
+	//起始界面
+	homeText() //起始界面
+
+	reader := bufio.NewReader(conn)
+	for {
+		//填写昵称
+		userName, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+		userName = strings.Trim(userName, " \r\n")
+
+		//发送昵称到服务端
+		data, err := proto.Encode(userName)
+		if err != nil {
+			fmt.Println("encode msg failed, err:", err)
+			return
+		}
+		_, err = conn.Write(data)
+		if err != nil {
+			fmt.Println("conn.Write err=", err)
+		}
+
+		msg, err := proto.Decode(reader)
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			fmt.Println("decode msg failed, err:", err)
+			return
+		}
+		if msg == "true" {
+			break
+		} else {
+			fmt.Println("昵称重复，请重新输入！")
+			fmt.Println(" *请重新输入昵称↓↓↓")
+			fmt.Printf(" >")
+		}
 	}
 
 	//加载界面
@@ -55,7 +77,6 @@ func main() {
 	//接收服务端广播
 	go func() {
 		for {
-			reader := bufio.NewReader(conn)
 			msg, err := proto.Decode(reader)
 			if err == io.EOF {
 				return
@@ -64,7 +85,6 @@ func main() {
 				fmt.Println("decode msg failed, err:", err)
 				return
 			}
-
 			mu.Lock()
 			// 使用 ANSI 转义序列移动光标
 			fmt.Printf("\033[G\033[K") // 移动光标到上一行并清除当前行
@@ -73,11 +93,11 @@ func main() {
 			mu.Unlock()
 		}
 	}()
-
+	rd := bufio.NewReader(os.Stdin)
 	//发送单行数据
 	for {
 		fmt.Print("> ")
-		line, err := reader.ReadString('\n')
+		line, err := rd.ReadString('\n')
 		if err != nil {
 			fmt.Println("readString err=", err)
 			continue
@@ -150,6 +170,7 @@ func logo() {
 }
 
 func homeText() {
+	clearConsole() //清空控制台
 	logo()
 	fmt.Println("\n *欢迎来到EasyChat聊天室(^_^)/\n")
 	fmt.Println(" *请输入昵称↓↓↓")
@@ -174,7 +195,7 @@ func loadText() {
 		}
 		bar = bar + "]"
 		fmt.Printf("\r %s %.2f%%", bar, progress*100)
-		//time.Sleep(time.Millisecond * 60)
+		time.Sleep(time.Millisecond * 60)
 	}
 	time.Sleep(time.Second / 4)
 }
