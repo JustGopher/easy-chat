@@ -37,7 +37,11 @@ func main() {
 		//填写昵称
 		userName, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 		userName = strings.Trim(userName, " \r\n")
-
+		// 验证昵称
+		if userName == "" {
+			fmt.Println("昵称不能为空，请重新输入！")
+			continue
+		}
 		//发送昵称到服务端
 		data, err := proto.Encode(userName)
 		if err != nil {
@@ -172,7 +176,7 @@ func logo() {
 func homeText() {
 	clearConsole() //清空控制台
 	logo()
-	fmt.Println("\n *欢迎来到EasyChat聊天室(^_^)/\n")
+	fmt.Println("\n *欢迎来到EasyChat聊天室(^_^)/")
 	fmt.Println(" *请输入昵称↓↓↓")
 	fmt.Printf(" >")
 }

@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"easy-chat/proto"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 )
@@ -16,41 +18,61 @@ var (
 	wt                sync.Mutex                  // 确保连续输出的原子性
 	heartbeatInterval = 20 * time.Second          // 心跳包检测间隔时间
 	timeoutInterval   = 90 * time.Second          // 连接超时时间
+	log               = logrus.New()
 )
 
+func init() {
+	file, err := os.OpenFile("./server/logrus.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err == nil {
+		log.Out = file
+	} else {
+		log.Out = os.Stdin
+		log.Warn("Failed to log to file, using default stderr,err=", err)
+	}
+}
+
 func main() {
+
 	//起始界面
 	homeText()
 
 	//开始监听
 	listen, err := net.Listen("tcp", "localhost:8088")
 	if err != nil {
-		fmt.Println("listen err=,", err)
-		return
+		fmt.Println("监听失败...")
+		log.Fatal("listen err=,", err)
+	} else {
+		fmt.Println("监听成功...")
 	}
 	defer listen.Close() //延时关闭
 
 	//循环等待客户端的连接
-	fmt.Println("等待客户端连接")
+	fmt.Println("等待客户端连接...")
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			fmt.Println("Accept() err=", err)
+			fmt.Println("接收客户端连接失败，正在重试...")
+			log.Error("Accept() err=", err)
 			continue
 		}
-
-		//起一个协程
+		//接收到连接后，起一个协程
 		go process(conn)
 		println("有客户端连接,客户端地址:", conn.RemoteAddr().String())
-
 	}
-
-	//fmt.Printf("listen suc=%v", listen)
 }
 
 func process(conn net.Conn) {
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		if conn != nil {
+			conn.Close()
+			conn = nil // 避免后续操作尝试再次关闭
+		}
+	}(conn)
 	defer func() {
+		if connections[conn] != "" {
+			fmt.Println(connections[conn] + "退出聊天室！")
+			sendMessage(conn, connections[conn]+"退出聊天室！\n")
+		}
 		//移除连接
 		rw.Lock()
 		delete(connections, conn)
@@ -73,7 +95,11 @@ func process(conn net.Conn) {
 		nickName, _ = proto.Decode(reader)
 		//判断昵称是否重复
 		flag := true
-		data, _ := proto.Encode("true")
+		data, err := proto.Encode("true")
+		if err != nil {
+			fmt.Println("编码失败...")
+			log.Fatal("Encode() err=", err)
+		}
 		for _, v := range connections {
 			if v == nickName {
 				data, _ = proto.Encode("false")
@@ -81,9 +107,10 @@ func process(conn net.Conn) {
 				break
 			}
 		}
-		_, err := conn.Write(data)
+		_, err = conn.Write(data)
 		if err != nil {
-			fmt.Println("sendMessage failed,err = ", err)
+			fmt.Println("发送信息失败...")
+			log.Error("sendMessage failed,err = ", err)
 			return
 		}
 		if flag == true {
@@ -95,10 +122,6 @@ func process(conn net.Conn) {
 	rw.Lock()
 	connections[conn] = nickName
 	rw.Unlock()
-	//锁的粒度过大会影响性能，将锁的范围限制在最小的必要区域会更好
-	//mu.Lock()
-	//connections[conn] = string(buf[:n])
-	//mu.Unlock()
 
 	wt.Lock()
 	println("---------------------------------------------------")
@@ -122,21 +145,13 @@ func process(conn net.Conn) {
 	for {
 		//等待客户端通过conn发送信息
 		//如果客户端没有write，那么协程就会阻塞在这里
-		//fmt.Printf("服务器在等待客户端%s发送信息\n", conn.RemoteAddr().String())
-		//n, err := conn.Read(buf)
-		//if err != nil {
-		//	fmt.Println("Read() err 该客户端连接已断开", conn.RemoteAddr().String())
-		//	return
-		//}
-		//显示客户端发送的消息到终端,此处无需加锁
-		//message := string(buf[:n])
 		message, err := proto.Decode(reader)
 		if err == io.EOF {
 			return
 		}
 		if err != nil {
-			fmt.Println("decode msg failed, err:", err)
-			return
+			fmt.Println("解码失败...")
+			log.Fatal("decode msg failed, go:process for{}, err:", err)
 		}
 		if message == "###PING" {
 			lastTime = time.Now() // 更新最后心跳时间
@@ -150,7 +165,12 @@ func process(conn net.Conn) {
 
 // 心跳检测
 func heartbeatChecker(conn net.Conn, lastTime *time.Time) {
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		if conn != nil {
+			conn.Close()
+			conn = nil // 避免后续操作尝试再次关闭
+		}
+	}(conn)
 	defer func() {
 		rw.Lock()
 		delete(connections, conn)
@@ -167,6 +187,7 @@ func heartbeatChecker(conn net.Conn, lastTime *time.Time) {
 		}
 		if time.Since(*lastTime) > timeoutInterval {
 			fmt.Println("客户端超时未发送心跳包，断开连接:", conn.RemoteAddr().String())
+			log.Error("heart timeOut:", conn.RemoteAddr().String())
 			return
 		}
 	}
@@ -201,12 +222,14 @@ func sendMessage(conn net.Conn, message string) {
 		if c != conn {
 			data, err := proto.Encode(message)
 			if err != nil {
-				fmt.Println("encode msg failed, err:", err)
+				fmt.Println("编码失败...")
+				log.Error("encode msg failed, go: sendMessage(), err=", err)
 				return
 			}
 			_, err = c.Write(data)
 			if err != nil {
-				fmt.Println("sendMessage failed,err = ", err)
+				fmt.Println("发送消息失败...")
+				log.Error("sendMessage failed, go: sendMessage(), err=", err)
 				return
 			}
 		}
