@@ -98,7 +98,8 @@ func process(conn net.Conn) {
 		data, err := proto.Encode("true")
 		if err != nil {
 			fmt.Println("编码失败...")
-			log.Fatal("Encode() err=", err)
+			log.Error("Encode() err=", err)
+			return
 		}
 		for _, v := range connections {
 			if v == nickName {
@@ -110,7 +111,7 @@ func process(conn net.Conn) {
 		_, err = conn.Write(data)
 		if err != nil {
 			fmt.Println("发送信息失败...")
-			log.Error("sendMessage failed,err = ", err)
+			log.Error("sendMessage failed, go:process for1{}, err = ", err)
 			return
 		}
 		if flag == true {
@@ -151,7 +152,8 @@ func process(conn net.Conn) {
 		}
 		if err != nil {
 			fmt.Println("解码失败...")
-			log.Fatal("decode msg failed, go:process for{}, err:", err)
+			log.Error("decode msg failed, go:process for2{}, err:", err)
+			return
 		}
 		if message == "###PING" {
 			lastTime = time.Now() // 更新最后心跳时间
@@ -159,7 +161,6 @@ func process(conn net.Conn) {
 			fmt.Print(message)
 			sendMessage(conn, message)
 		}
-
 	}
 }
 
