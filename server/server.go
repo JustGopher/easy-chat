@@ -13,15 +13,99 @@ import (
 )
 
 var (
-	connections       = make(map[net.Conn]string) // 用于存储连接
-	rw                sync.RWMutex                // 保护连接的读写
-	wt                sync.Mutex                  // 确保连续输出的原子性
-	heartbeatInterval = 20 * time.Second          // 心跳包检测间隔时间
-	timeoutInterval   = 90 * time.Second          // 连接超时时间
-	log               = logrus.New()
+	myConn  MyConn     // 用于存储连接
+	wt      sync.Mutex // 确保连续输出的原子性
+	log     = logrus.New()
+	msgChan = make(chan string)
 )
 
+const (
+	port              = "localhost:8088"
+	heartbeatInterval = 20 * time.Second // 心跳包检测间隔时间
+	timeoutInterval   = 90 * time.Second // 连接超时时间
+)
+
+type MyConn struct {
+	connections map[net.Conn]string
+	rw          sync.RWMutex // 保护连接的读写
+}
+
+func CreatMyConn() *MyConn {
+	return &MyConn{
+		connections: make(map[net.Conn]string),
+		rw:          sync.RWMutex{},
+	}
+}
+
+func (c *MyConn) Add(conn net.Conn, name string) {
+	c.rw.Lock()
+	c.connections[conn] = name
+	c.rw.Unlock()
+}
+
+func (c *MyConn) Delete(conn net.Conn) {
+	c.rw.Lock()
+	delete(c.connections, conn)
+	c.rw.Unlock()
+}
+func (c *MyConn) UserExit(conn net.Conn) {
+	if c.connections[conn] != "" {
+		fmt.Println(c.connections[conn] + "退出聊天室！")
+		sendMessage(conn, c.connections[conn]+"退出聊天室！\n")
+	}
+	myConn.Delete(conn)
+	myConn.ShowList()
+}
+
+func (c *MyConn) ShowList() {
+	wt.Lock()
+	println("---------------------------------------------------")
+	fmt.Println("当前用户列表：")
+	for n, v := range c.connections {
+		fmt.Printf("%v %v\n", n.RemoteAddr().String(), v)
+	}
+	println("---------------------------------------------------")
+	wt.Unlock()
+}
+func (c *MyConn) isExist(conn net.Conn) bool {
+	c.rw.RLock()
+	_, exists := myConn.connections[conn]
+	c.rw.RUnlock()
+	return exists
+}
+func (c *MyConn) isNameExist(nickName string) bool {
+	for _, v := range myConn.connections {
+		if v == nickName {
+			return true
+		}
+	}
+	return false
+}
+
+type MyListener struct {
+	Listener net.Listener
+}
+
+func (m *MyListener) Close() {
+	err := m.Listener.Close()
+	if err != nil {
+		log.Fatal("close listener err=", err)
+	}
+}
+
+func (m *MyListener) CreatListener(address string) {
+	var err error
+	m.Listener, err = net.Listen("tcp", address)
+	if err != nil {
+		fmt.Println("监听失败...")
+		log.Fatal("listen err=", err)
+	} else {
+		fmt.Println("监听成功...")
+	}
+}
+
 func init() {
+	myConn = *CreatMyConn()
 	file, err := os.OpenFile("./server/logrus.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err == nil {
 		log.Out = file
@@ -32,24 +116,18 @@ func init() {
 }
 
 func main() {
-
 	//起始界面
 	homeText()
 
 	//开始监听
-	listen, err := net.Listen("tcp", "localhost:8088")
-	if err != nil {
-		fmt.Println("监听失败...")
-		log.Fatal("listen err=,", err)
-	} else {
-		fmt.Println("监听成功...")
-	}
-	defer listen.Close() //延时关闭
+	var myListener MyListener
+	myListener.CreatListener(port)
+	defer myListener.Close()
+	fmt.Println("监听端口成功，等待客户端连接...")
 
 	//循环等待客户端的连接
-	fmt.Println("等待客户端连接...")
 	for {
-		conn, err := listen.Accept()
+		conn, err := myListener.Listener.Accept()
 		if err != nil {
 			fmt.Println("接收客户端连接失败，正在重试...")
 			log.Error("Accept() err=", err)
@@ -62,90 +140,43 @@ func main() {
 }
 
 func process(conn net.Conn) {
-	defer func(conn net.Conn) {
-		if conn != nil {
-			conn.Close()
-			conn = nil // 避免后续操作尝试再次关闭
-		}
-	}(conn)
-	defer func() {
-		if connections[conn] != "" {
-			fmt.Println(connections[conn] + "退出聊天室！")
-			sendMessage(conn, connections[conn]+"退出聊天室！\n")
-		}
-		//移除连接
-		rw.Lock()
-		delete(connections, conn)
-		rw.Unlock()
-
-		wt.Lock()
-		println("---------------------------------------------------")
-		fmt.Println("当前用户列表：")
-		for n, v := range connections {
-			fmt.Printf("%v %v\n", n.RemoteAddr().String(), v)
-		}
-		println("---------------------------------------------------")
-		wt.Unlock()
-	}()
+	defer conn.Close()
+	defer myConn.UserExit(conn)
 
 	reader := bufio.NewReader(conn)
 	var nickName string
 	for {
-		//接收昵称
 		nickName, _ = proto.Decode(reader)
-		//判断昵称是否重复
-		flag := true
-		data, err := proto.Encode("true")
-		if err != nil {
-			fmt.Println("编码失败...")
-			log.Error("Encode() err=", err)
-			return
+		data, _ := proto.Encode("false")
+		flag := myConn.isNameExist(nickName)
+		if !flag {
+			data, _ = proto.Encode("true")
 		}
-		for _, v := range connections {
-			if v == nickName {
-				data, _ = proto.Encode("false")
-				flag = false
-				break
-			}
-		}
-		_, err = conn.Write(data)
+		_, err := conn.Write(data)
 		if err != nil {
 			fmt.Println("发送信息失败...")
 			log.Error("sendMessage failed, go:process for1{}, err = ", err)
 			return
 		}
-		if flag == true {
+		if !flag {
 			break
 		}
 	}
 
 	//添加连接
-	rw.Lock()
-	connections[conn] = nickName
-	rw.Unlock()
+	myConn.Add(conn, nickName)
 
-	wt.Lock()
-	println("---------------------------------------------------")
 	println("有用户进入聊天室，用户昵称:", nickName)
-	//当前所有用户
-	fmt.Println("当前用户列表：")
-	for n, v := range connections {
-		fmt.Printf("%v %v\n", n.RemoteAddr().String(), v)
-	}
-	println("---------------------------------------------------")
-	wt.Unlock()
+	myConn.ShowList()
 
 	//广播欢迎语
-	welcome := "Welcome " + connections[conn] + " joined the chat!\n"
-	sendMessage(nil, welcome)
+	sendMessage(nil, "Welcome "+myConn.connections[conn]+" joined the chat!\n")
 
 	lastTime := time.Now()
 	go heartbeatChecker(conn, &lastTime)
 
 	//循环接收客户端发送的数据
 	for {
-		//等待客户端通过conn发送信息
-		//如果客户端没有write，那么协程就会阻塞在这里
 		message, err := proto.Decode(reader)
 		if err == io.EOF {
 			return
@@ -166,24 +197,11 @@ func process(conn net.Conn) {
 
 // 心跳检测
 func heartbeatChecker(conn net.Conn, lastTime *time.Time) {
-	defer func(conn net.Conn) {
-		if conn != nil {
-			conn.Close()
-			conn = nil // 避免后续操作尝试再次关闭
-		}
-	}(conn)
-	defer func() {
-		rw.Lock()
-		delete(connections, conn)
-		rw.Unlock()
-	}()
-
+	defer conn.Close()
+	defer myConn.Delete(conn)
 	for {
 		time.Sleep(heartbeatInterval)
-		rw.RLock()
-		_, exists := connections[conn]
-		rw.RUnlock()
-		if !exists {
+		if !myConn.isExist(conn) {
 			return // 如果连接已经被删除，退出
 		}
 		if time.Since(*lastTime) > timeoutInterval {
@@ -219,7 +237,7 @@ func clearConsole() {
 }
 
 func sendMessage(conn net.Conn, message string) {
-	for c := range connections {
+	for c := range myConn.connections {
 		if c != conn {
 			data, err := proto.Encode(message)
 			if err != nil {

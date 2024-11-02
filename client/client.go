@@ -20,7 +20,6 @@ var (
 const heartbeatInterval = 30 * time.Second // 心跳包发送间隔
 
 func main() {
-
 	//连接服务端
 	conn, err := net.Dial("tcp", "localhost:8088")
 	if err != nil {
@@ -70,7 +69,7 @@ func main() {
 		}
 	}
 
-	//加载界面
+	//过渡动画
 	loadText()
 	//主界面
 	mainText()
@@ -111,7 +110,9 @@ func main() {
 			fmt.Println("退出聊天室...")
 			break
 		}
-
+		if line == "" {
+			continue
+		}
 		//消息拼接
 		date := time.Now().Format("[15:04:05]")
 		massage := userName + date + ": " + line
