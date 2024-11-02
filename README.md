@@ -47,8 +47,13 @@ easy-chat/
    git clone https://github.com/your-repo/easy-chat.git
    cd easy-chat
    ```
+2. 下载依赖：
 
-2. 启动服务端：
+   ```shell
+   go get
+   ```
+
+3. 启动服务端：
 
    ```shell
    go run ./server/server.go
@@ -56,7 +61,7 @@ easy-chat/
 
    服务端将在 localhost:8088 端口上监听客户端的连接。
 
-3. 启动客户端
+4. 启动客户端
 
    在新的终端窗口中进入客户端目录：
 

@@ -137,7 +137,7 @@ func main() {
 	}
 }
 
-// 定期发送心跳包
+// sendHeartbeat 定期发送心跳包
 func sendHeartbeat(conn net.Conn) {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
@@ -157,12 +157,15 @@ func sendHeartbeat(conn net.Conn) {
 	}
 }
 
+// clearConsole 清空控制台
 func clearConsole() {
 	fmt.Print("\033[2J\033[3J") // 清除屏幕
 	fmt.Print("\033[H")         // 将光标移动到左上角
 }
 
-func logo() {
+// homeText 起始文本
+func homeText() {
+	clearConsole() //清空控制台
 	fmt.Printf(`╔═══╗─────────────╔═══╗╔╗───────╔╗─────╔═══╗
 ║╔══╝─────────────║╔═╗║║║──────╔╝╚╗────║╔═╗║
 ║╚══╗╔══╗╔══╗╔╗─╔╗║║─╚╝║╚═╗╔══╗╚╗╔╝────║║─╚╝╔══╗
@@ -172,16 +175,12 @@ func logo() {
 ─────────────╔═╝║─────by:RationalDysaniaer
 ─────────────╚══╝ 
 `)
-}
-
-func homeText() {
-	clearConsole() //清空控制台
-	logo()
 	fmt.Println("\n *欢迎来到EasyChat聊天室(^_^)/")
 	fmt.Println(" *请输入昵称↓↓↓")
 	fmt.Printf(" >")
 }
 
+// loadText 过渡动画
 func loadText() {
 	totalSteps := 40 // 进度条总长度
 	var bar string
@@ -205,6 +204,7 @@ func loadText() {
 	time.Sleep(time.Second / 4)
 }
 
+// mainText 聊天页面上方文本
 func mainText() {
 	clearConsole()
 	fmt.Printf("EasyChat-Go    [currentUser:%v]\n", userName)
