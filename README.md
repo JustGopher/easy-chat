@@ -89,5 +89,5 @@ easy-chat/
 
 ## 开发者：
 
-本项目由 RationalDysaniaer 开发。
+本项目由 JustGopher 开发。
 

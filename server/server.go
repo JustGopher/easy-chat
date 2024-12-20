@@ -12,16 +12,18 @@ import (
 	"time"
 )
 
-var (
-	myConn MyConn     // 用于存储连接
-	wt     sync.Mutex // 确保连续输出的原子性
-	log    = logrus.New()
-)
-
 const (
 	port              = "localhost:8088"
 	heartbeatInterval = 20 * time.Second // 心跳包检测间隔时间
 	timeoutInterval   = 90 * time.Second // 连接超时时间
+)
+
+var (
+	myConn     MyConn // 用于存储连接
+	myListener MyListener
+	console    LocalMsg
+	wt         sync.Mutex // 确保连续输出的原子性
+	log        = logrus.New()
 )
 
 // MyConn 连接列表
@@ -105,8 +107,8 @@ func (m *MyListener) Close() {
 	}
 }
 
-// CreatListener 建立监听
-func (m *MyListener) CreatListener(address string) {
+// startListen 开始监听
+func (m *MyListener) startListen(address string) {
 	var err error
 	m.Listener, err = net.Listen("tcp", address)
 	if err != nil {
@@ -117,9 +119,63 @@ func (m *MyListener) CreatListener(address string) {
 	}
 }
 
+type LocalMsg struct {
+	msg chan string
+	mu  sync.Mutex
+}
+
+func createLocalMsg() *LocalMsg {
+	return &LocalMsg{
+		msg: make(chan string),
+		mu:  sync.Mutex{},
+	}
+}
+
+// add 添加消息
+func (l *LocalMsg) add(s string) {
+	l.mu.Lock()
+	l.msg <- s
+	l.mu.Unlock()
+}
+
+// out 输出消息
+func (l *LocalMsg) out() {
+	for s := range l.msg {
+		fmt.Println(s)
+	}
+}
+
+// clearConsole 清空控制台
+func (l *LocalMsg) clearConsole() {
+	fmt.Print("\033[2J\033[3J") // 清除屏幕
+	fmt.Print("\033[H")         // 将光标移动到左上角
+}
+
+// homeText 起始界面
+func (l *LocalMsg) homeText() {
+	l.clearConsole()
+	l.add(`╔═══╗─────────────╔═══╗╔╗───────╔╗─────╔═══╗
+║╔══╝─────────────║╔═╗║║║──────╔╝╚╗────║╔═╗║
+║╚══╗╔══╗╔══╗╔╗─╔╗║║─╚╝║╚═╗╔══╗╚╗╔╝────║║─╚╝╔══╗
+║╔══╝║╔╗║║══╣║║─║║║║─╔╗║╔╗║║╔╗║─║║─╔══╗║║╔═╗║╔╗║
+║╚══╗║╔╗║╠══║║╚═╝║║╚═╝║║║║║║╔╗║─║╚╗╚══╝║╚╩═║║╚╝║
+╚═══╝╚╝╚╝╚══╝╚═╗╔╝╚═══╝╚╝╚╝╚╝╚╝─╚═╝────╚═══╝╚══╝
+─────────────╔═╝║─────by:RationalDysaniaer
+─────────────╚══╝ 
+
+服务开始监听...
+`)
+}
+
+type broadcastMsg struct {
+	msg chan string
+	mu  sync.Mutex
+}
+
 // init 初始化
 func init() {
 	myConn = *CreatMyConn()
+	console = *createLocalMsg()
 	file, err := os.OpenFile("./server/logrus.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err == nil {
 		log.Out = file
@@ -130,24 +186,39 @@ func init() {
 }
 
 func main() {
-	//起始界面
-	homeText()
+	// 本地消息输出
+	go console.out()
 
-	//开始监听
-	var myListener MyListener
-	myListener.CreatListener(port)
+	// 起始界面
+	console.homeText()
+
+	// 开始监听
+	myListener.startListen(port)
 	defer myListener.Close()
-	fmt.Println("监听端口成功，等待客户端连接...")
+	console.add("监听端口成功，等待客户端连接...")
 
-	//循环等待客户端的连接
+	// 循环等待客户端的连接
+	go waitConn()
+
+	// 获取并处理控制台输入
+	waitInput()
+}
+
+func waitInput() {
+	for {
+		time.Sleep(100)
+	}
+}
+
+func waitConn() {
 	for {
 		conn, err := myListener.Listener.Accept()
 		if err != nil {
-			fmt.Println("接收客户端连接失败，正在重试...")
+			fmt.Println("接收客户端连接失败，正在重试...", err)
 			log.Error("Accept() err=", err)
 			continue
 		}
-		//接收到连接后，起一个协程
+		// 接收到连接后，起一个协程
 		go process(conn)
 		println("有客户端连接,客户端地址:", conn.RemoteAddr().String())
 	}
@@ -225,28 +296,6 @@ func heartbeatChecker(conn net.Conn, lastTime *time.Time) {
 			return
 		}
 	}
-}
-
-// homeText 起始文本
-func homeText() {
-	clearConsole()
-	fmt.Printf(`╔═══╗─────────────╔═══╗╔╗───────╔╗─────╔═══╗
-║╔══╝─────────────║╔═╗║║║──────╔╝╚╗────║╔═╗║
-║╚══╗╔══╗╔══╗╔╗─╔╗║║─╚╝║╚═╗╔══╗╚╗╔╝────║║─╚╝╔══╗
-║╔══╝║╔╗║║══╣║║─║║║║─╔╗║╔╗║║╔╗║─║║─╔══╗║║╔═╗║╔╗║
-║╚══╗║╔╗║╠══║║╚═╝║║╚═╝║║║║║║╔╗║─║╚╗╚══╝║╚╩═║║╚╝║
-╚═══╝╚╝╚╝╚══╝╚═╗╔╝╚═══╝╚╝╚╝╚╝╚╝─╚═╝────╚═══╝╚══╝
-─────────────╔═╝║─────by:RationalDysaniaer
-─────────────╚══╝ 
-`)
-	fmt.Println()
-	fmt.Println("服务开始监听...")
-}
-
-// clearConsole 清空控制台
-func clearConsole() {
-	fmt.Print("\033[2J\033[3J") // 清除屏幕
-	fmt.Print("\033[H")         // 将光标移动到左上角
 }
 
 // sendMessage 发送消息
