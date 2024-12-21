@@ -90,9 +90,9 @@ func main() {
 			}
 			mu.Lock()
 			// 使用 ANSI 转义序列移动光标
-			fmt.Printf("\033[G\033[K") // 移动光标到上一行并清除当前行
-			fmt.Print(msg)             // 打印新消息
-			fmt.Printf("> %s", "")     // 重新打印输入提示符
+			fmt.Print("\033[G\033[K") // 移动光标到上一行并清除当前行
+			fmt.Println(msg)          // 打印新消息
+			fmt.Printf("> %s", "")    // 重新打印输入提示符
 			mu.Unlock()
 		}
 	}()
@@ -118,13 +118,13 @@ func main() {
 		massage := userName + date + ": " + line
 
 		// 本地显示消息
-		mu.Lock()
+		//mu.Lock()
 		fmt.Printf("\033[1A\033[K") // 移动光标到上一行并清除当前行
-		fmt.Printf("%s\n", massage)
-		mu.Unlock()
+		//fmt.Printf("%s\n", massage)
+		//mu.Unlock()
 
 		// 发送给服务器
-		data, err := proto.Encode(massage + "\n")
+		data, err := proto.Encode(massage)
 		if err != nil {
 			fmt.Println("encode msg failed, err:", err)
 			return
