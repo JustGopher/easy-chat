@@ -3,8 +3,9 @@ package main
 import (
 	"bufio"
 	"easy-chat/proto"
-	"easy-chat/server/myLog"
 	"fmt"
+	"github.com/go-ini/ini"
+	"github.com/sirupsen/logrus"
 	"io"
 	"net"
 	"os"
@@ -13,17 +14,33 @@ import (
 	"time"
 )
 
-const (
-	port              = "localhost:8088"
-	heartbeatInterval = 20 * time.Second // 心跳包检测间隔时间
-	timeoutInterval   = 90 * time.Second // 连接超时时间
-)
+type Config struct {
+	App struct {
+		Host              string `ini:"host"`
+		Port              string `ini:"port"`
+		HeartbeatInterval int    `ini:"heartbeatInterval"`
+		TimeoutInterval   int    `ini:"timeoutInterval"`
+	}
+	MyLog struct {
+		File   string `ini:"file"`
+		Level  string `ini:"level"`
+		Format string `ini:"format"`
+	}
+	Redis struct {
+		Host string `ini:"host"`
+		Port string `ini:"port"`
+		Pwd  string `ini:"pwd"`
+		Db   int    `ini:"db"`
+	}
+}
 
 var (
 	myConn       *MyConn // 用于存储连接
 	myListener   MyListener
 	console      *LocalMsg
 	broadcastMsg *BroadcastMsg
+	config       Config
+	logger       *logrus.Logger
 )
 
 // MyConn 连接列表
@@ -102,7 +119,7 @@ type MyListener struct {
 func (m *MyListener) Close() {
 	err := m.Listener.Close()
 	if err != nil {
-		myLog.Logger.Fatal("close listener err=", err)
+		logger.Fatal("close listener err=", err)
 	}
 }
 
@@ -112,7 +129,7 @@ func (m *MyListener) startListen(address string) {
 	m.Listener, err = net.Listen("tcp", address)
 	if err != nil {
 		console.add("监听失败...")
-		myLog.Logger.Fatal("listen err=", err)
+		logger.Fatal("listen err=", err)
 	} else {
 		console.add("监听成功...")
 	}
@@ -193,16 +210,63 @@ func (bc *BroadcastMsg) sendMessage() {
 			data, err := proto.Encode(message)
 			if err != nil {
 				console.add("编码失败...")
-				myLog.Logger.Error("encode msg failed, go: sendMessage(), err=", err)
+				logger.Error("encode msg failed, go: sendMessage(), err=", err)
 				return
 			}
 			_, err = c.Write(data)
 			if err != nil {
 				console.add("发送消息失败...")
-				myLog.Logger.Error("sendMessage failed, go: sendMessage(), err=", err)
+				logger.Error("sendMessage failed, go: sendMessage(), err=", err)
 				return
 			}
 		}
+	}
+}
+
+func loadConfig(path string) Config {
+	load, err := ini.Load(path)
+	if err != nil {
+		panic("failed to load ini file")
+	}
+	err = load.MapTo(&config)
+	if err != nil {
+		panic("failed to map ini file to struct")
+	}
+	return config
+}
+
+func logInit() {
+	logger = logrus.New()
+	// 设置日志输出到 server.myLog
+	file, err := os.OpenFile(config.MyLog.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err == nil {
+		logger.Out = file
+	} else {
+		logger.Out = os.Stdout
+		logger.Warnf("Failed to myLog to file, using default stdout, err: %v", err)
+	}
+	// 设置日志级别
+	// 使用 logrus.ParseLevel 可以避免手动映射日志级别
+	level, err := logrus.ParseLevel(config.MyLog.Level)
+	if err != nil {
+		level = logrus.InfoLevel
+		logger.Warnf("Invalid myLog level '%s', using default: %s", config.MyLog.Level, level)
+	}
+	logger.SetLevel(level)
+	// 配置日志格式
+	switch config.MyLog.Format {
+	case "json":
+		logger.SetFormatter(&logrus.JSONFormatter{
+			TimestampFormat: "2006-01-02 15:04:05",
+		})
+	case "text":
+		logger.SetFormatter(&logrus.TextFormatter{
+			TimestampFormat: "2006-01-02 15:04:05",
+		})
+	default:
+		logger.SetFormatter(&logrus.TextFormatter{
+			TimestampFormat: "2006-01-02 15:04:05",
+		})
 	}
 }
 
@@ -211,21 +275,23 @@ func init() {
 	myConn = CreatMyConn()
 	console = createLocalMsg()
 	broadcastMsg = createBroadcastMsg()
-	myLog.Init("./server/config.ini")
-	myLog.Logger.Info("app run")
+	config = loadConfig("./server/config.ini")
+	logInit()
 }
 
 func main() {
 	// 本地消息输出
 	go console.out()
 	go broadcastMsg.sendMessage()
+
 	// 起始界面
 	console.homeText()
 
 	// 开始监听
-	myListener.startListen(port)
+	myListener.startListen(config.App.Host + ":" + config.App.Port)
 	defer myListener.Close()
 	console.add("监听端口成功，等待客户端连接...")
+	logger.Info("app run")
 
 	// 循环等待客户端的连接
 	go waitConn()
@@ -234,6 +300,7 @@ func main() {
 	waitInput()
 }
 
+// waitInput 接收终端输入
 func waitInput() {
 	rd := bufio.NewReader(os.Stdin)
 	for {
@@ -248,25 +315,26 @@ func waitInput() {
 		switch line {
 		case "/help":
 			console.add("1. /help\t帮助\n" +
-				"2. /users\t用户列表\n" +
-				"3. /exit\t退出程序")
+				"2. /users\t查看用户列表\n" +
+				"3. /exit\t关闭服务端程序")
 		case "/users":
 			myConn.ShowList()
 		case "/exit":
 			fmt.Println("退出程序！")
 			os.Exit(0)
 		default:
-			console.add("无效命令")
+			console.add(`无效命令，输入/help获取帮助`)
 		}
 	}
 }
 
+// waitConn 循环接收客户端连接
 func waitConn() {
 	for {
 		conn, err := myListener.Listener.Accept()
 		if err != nil {
 			console.add("接收客户端连接失败，正在重试..." + err.Error())
-			myLog.Logger.Error("Accept() err=", err)
+			logger.Error("Accept() err=", err)
 			continue
 		}
 		// 接收到连接后，起一个协程
@@ -292,7 +360,7 @@ func process(conn net.Conn) {
 		_, err := conn.Write(data)
 		if err != nil {
 			console.add("发送信息失败...")
-			myLog.Logger.Error("sendMessage failed, go:process for1{}, err = ", err)
+			logger.Error("sendMessage failed, go:process for1{}, err = ", err)
 			return
 		}
 		if !flag {
@@ -302,12 +370,11 @@ func process(conn net.Conn) {
 
 	//添加连接
 	myConn.Add(conn, nickName)
-
 	console.add("有用户进入聊天室，用户昵称:" + nickName)
 	myConn.ShowList()
 
 	//广播欢迎语
-	broadcastMsg.add("Welcome " + myConn.connections[conn] + " joined the chat!\n")
+	broadcastMsg.add("Welcome " + myConn.connections[conn] + " joined the chat!")
 
 	lastTime := time.Now()
 	go heartbeatChecker(conn, &lastTime)
@@ -320,7 +387,7 @@ func process(conn net.Conn) {
 		}
 		if err != nil {
 			console.add("解码失败...")
-			myLog.Logger.Error("decode msg failed, go:process for2{}, err:", err)
+			logger.Error("decode msg failed, go:process for2{}, err:", err)
 			return
 		}
 		if message == "###PING" {
@@ -337,13 +404,13 @@ func heartbeatChecker(conn net.Conn, lastTime *time.Time) {
 	defer conn.Close()
 	defer myConn.Delete(conn)
 	for {
-		time.Sleep(heartbeatInterval)
+		time.Sleep(time.Duration(config.App.HeartbeatInterval) * time.Second)
 		if !myConn.isExist(conn) {
 			return // 如果连接已经被删除，退出
 		}
-		if time.Since(*lastTime) > timeoutInterval {
+		if time.Since(*lastTime) > time.Duration(config.App.TimeoutInterval)*time.Second {
 			console.add("客户端超时未发送心跳包，断开连接:" + conn.RemoteAddr().String())
-			myLog.Logger.Error("heart timeOut:", conn.RemoteAddr().String())
+			logger.Error("heart timeOut:", conn.RemoteAddr().String())
 			return
 		}
 	}
