@@ -2,11 +2,16 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"easy-chat/proto"
+	"easy-chat/server/object"
+	"easy-chat/server/redisDB"
+	"errors"
 	"fmt"
 	"github.com/go-ini/ini"
 	"github.com/sirupsen/logrus"
 	"io"
+	"log"
 	"net"
 	"os"
 	"strings"
@@ -39,28 +44,38 @@ var (
 	myListener   MyListener
 	console      *LocalMsg
 	broadcastMsg *BroadcastMsg
-	config       Config
+	config       object.Config
 	logger       *logrus.Logger
+	rdb          *redisDB.RedisHandler
+	ctx          = context.Background()
 )
+
+// ConnState 连接状态
+type ConnState struct {
+	nickName      string
+	add           string
+	loginTime     time.Time
+	lastHeartTime time.Time
+}
 
 // MyConn 连接列表
 type MyConn struct {
-	connections map[net.Conn]string
+	connections map[net.Conn]*ConnState
 	rw          sync.RWMutex // 保护连接的读写
 }
 
 // CreatMyConn 连接列表初始化
 func CreatMyConn() *MyConn {
 	return &MyConn{
-		connections: make(map[net.Conn]string),
+		connections: make(map[net.Conn]*ConnState),
 		rw:          sync.RWMutex{},
 	}
 }
 
 // Add 添加客户端连接
-func (c *MyConn) Add(conn net.Conn, name string) {
+func (c *MyConn) Add(conn net.Conn, state *ConnState) {
 	c.rw.Lock()
-	c.connections[conn] = name
+	c.connections[conn] = state
 	c.rw.Unlock()
 }
 
@@ -73,10 +88,8 @@ func (c *MyConn) Delete(conn net.Conn) {
 
 // UserExit 客户端退出
 func (c *MyConn) UserExit(conn net.Conn) {
-	if c.connections[conn] != "" {
-		console.add(c.connections[conn] + "退出聊天室！")
-		broadcastMsg.add(c.connections[conn] + "退出聊天室！")
-	}
+	console.add(c.connections[conn].nickName + "退出聊天室！")
+	broadcastMsg.add(c.connections[conn].nickName + "退出聊天室！")
 	myConn.Delete(conn)
 	myConn.ShowList()
 }
@@ -85,8 +98,21 @@ func (c *MyConn) UserExit(conn net.Conn) {
 func (c *MyConn) ShowList() {
 	var message string
 	message = message + "---------------------------------------------------\n当前用户列表：\n"
+	message = message + fmt.Sprintf("IP              登录时间            昵称\n")
 	for n, v := range c.connections {
-		message = message + fmt.Sprintf("%v %v\n", n.RemoteAddr().String(), v)
+		message = message + fmt.Sprintf("%v %v %v\n", n.RemoteAddr().String(), v.loginTime.Format("2006:01:02 15:04:05"), v.nickName)
+	}
+	message = message + "---------------------------------------------------"
+	console.add(message)
+}
+
+// ShowLastHeardTime 显示心跳时间
+func (c *MyConn) ShowLastHeardTime() {
+	var message string
+	message = message + "---------------------------------------------------\n用户心跳列表：\n"
+	message = message + fmt.Sprintf("登录时间            最后心跳时间        昵称\n")
+	for _, v := range c.connections {
+		message = message + fmt.Sprintf("%v %v %v\n", v.loginTime.Format("2006:01:02 15:04:05"), v.lastHeartTime.Format("2006:01:02 15:04:05"), v.nickName)
 	}
 	message = message + "---------------------------------------------------"
 	console.add(message)
@@ -103,11 +129,21 @@ func (c *MyConn) isExist(conn net.Conn) bool {
 // isNameExist 昵称是否已存在
 func (c *MyConn) isNameExist(nickName string) bool {
 	for _, v := range myConn.connections {
-		if v == nickName {
+		if v.nickName == nickName {
 			return true
 		}
 	}
 	return false
+}
+
+// getConnByNickName 通过昵称获取连接
+func (c *MyConn) getConnByNickName(nickName string) (net.Conn, error) {
+	for k, v := range myConn.connections {
+		if v.nickName == nickName {
+			return k, nil
+		}
+	}
+	return nil, errors.New("no user")
 }
 
 // MyListener 监听器
@@ -192,18 +228,21 @@ type BroadcastMsg struct {
 	mu  sync.Mutex
 }
 
+// createBroadcastMsg 创建广播消息处理
 func createBroadcastMsg() *BroadcastMsg {
 	return &BroadcastMsg{
 		msg: make(chan string),
 	}
 }
 
+// add 添加广播消息
 func (bc *BroadcastMsg) add(message string) {
 	bc.mu.Lock()
 	bc.msg <- message
 	bc.mu.Unlock()
 }
 
+// sendMessage 发送广播消息
 func (bc *BroadcastMsg) sendMessage() {
 	for message := range bc.msg {
 		for c := range myConn.connections {
@@ -223,7 +262,8 @@ func (bc *BroadcastMsg) sendMessage() {
 	}
 }
 
-func loadConfig(path string) Config {
+// loadConfig 加载日志文件
+func loadConfig(path string) object.Config {
 	load, err := ini.Load(path)
 	if err != nil {
 		panic("failed to load ini file")
@@ -235,6 +275,7 @@ func loadConfig(path string) Config {
 	return config
 }
 
+// logInit 日志初始化
 func logInit() {
 	logger = logrus.New()
 	// 设置日志输出到 server.myLog
@@ -270,6 +311,21 @@ func logInit() {
 	}
 }
 
+// redisInit redis初始化
+func redisInit() {
+	rdb = redisDB.NewRedisHandler(config)
+	// 启动时清理旧数据
+	if err := rdb.Clean(ctx); err != nil {
+		log.Fatalf("clean redis data faild when start: %v", err)
+	}
+	// 服务结束时清理数据
+	defer func() {
+		if err := rdb.Clean(ctx); err != nil {
+			log.Printf("clean redis data faild when close: %v", err)
+		}
+	}()
+}
+
 // init 初始化
 func init() {
 	myConn = CreatMyConn()
@@ -277,6 +333,7 @@ func init() {
 	broadcastMsg = createBroadcastMsg()
 	config = loadConfig("./server/config.ini")
 	logInit()
+	redisInit()
 }
 
 func main() {
@@ -292,6 +349,11 @@ func main() {
 	defer myListener.Close()
 	console.add("监听端口成功，等待客户端连接...")
 	logger.Info("app run")
+
+	// 开启消息队列消费者
+	for i := 0; i < 3; i++ {
+		go msgQueue()
+	}
 
 	// 循环等待客户端的连接
 	go waitConn()
@@ -314,13 +376,25 @@ func waitInput() {
 
 		switch line {
 		case "/help":
-			console.add("1. /help\t帮助\n" +
-				"2. /users\t查看用户列表\n" +
-				"3. /exit\t关闭服务端程序")
+			console.add("0. /help\t帮助\n" +
+				"1. /users\t查看用户列表\n" +
+				"2. /heart\t查看用户最后心跳时间\n" +
+				"3. /rank\t查看用户活跃排行榜\n" +
+				"4. /exit\t关闭服务端程序")
 		case "/users":
 			myConn.ShowList()
+		case "/heart":
+			myConn.ShowLastHeardTime()
+		case "/rank":
+			rank, err := rdb.ShowRank(ctx)
+			if err != nil {
+				console.add(err.Error())
+				logger.Error(err.Error())
+			} else {
+				console.add(rank)
+			}
 		case "/exit":
-			fmt.Println("退出程序！")
+			console.add("退出程序！")
 			os.Exit(0)
 		default:
 			console.add(`无效命令，输入/help获取帮助`)
@@ -367,19 +441,24 @@ func process(conn net.Conn) {
 			break
 		}
 	}
-
+	state := &ConnState{
+		nickName:      nickName,
+		add:           conn.RemoteAddr().String(),
+		loginTime:     time.Now(),
+		lastHeartTime: time.Now(),
+	}
 	//添加连接
-	myConn.Add(conn, nickName)
+	myConn.Add(conn, state)
 	console.add("有用户进入聊天室，用户昵称:" + nickName)
 	myConn.ShowList()
 
 	//广播欢迎语
-	broadcastMsg.add("Welcome " + myConn.connections[conn] + " joined the chat!")
+	broadcastMsg.add("Welcome " + myConn.connections[conn].nickName + " joined the chat!")
 
-	lastTime := time.Now()
-	go heartbeatChecker(conn, &lastTime)
+	// 开启心跳检测
+	go heartbeatChecker(conn)
 
-	//循环接收客户端发送的数据
+	// 循环接收客户端发送的数据
 	for {
 		message, err := proto.Decode(reader)
 		if err == io.EOF {
@@ -390,17 +469,17 @@ func process(conn net.Conn) {
 			logger.Error("decode msg failed, go:process for2{}, err:", err)
 			return
 		}
-		if message == "###PING" {
-			lastTime = time.Now() // 更新最后心跳时间
-		} else {
-			console.add(message)
-			broadcastMsg.add(message)
+		msg := fmt.Sprintf(state.nickName + "!$|$|$!" + message)
+		err = rdb.MsgQueuePush(ctx, msg)
+		if err != nil {
+			logger.Error(err.Error())
 		}
+		err = rdb.AddScore(ctx, nickName)
 	}
 }
 
 // heartbeatChecker 心跳检测
-func heartbeatChecker(conn net.Conn, lastTime *time.Time) {
+func heartbeatChecker(conn net.Conn) {
 	defer conn.Close()
 	defer myConn.Delete(conn)
 	for {
@@ -408,10 +487,36 @@ func heartbeatChecker(conn net.Conn, lastTime *time.Time) {
 		if !myConn.isExist(conn) {
 			return // 如果连接已经被删除，退出
 		}
-		if time.Since(*lastTime) > time.Duration(config.App.TimeoutInterval)*time.Second {
+		if time.Since(myConn.connections[conn].lastHeartTime) > time.Duration(config.App.TimeoutInterval)*time.Second {
 			console.add("客户端超时未发送心跳包，断开连接:" + conn.RemoteAddr().String())
 			logger.Error("heart timeOut:", conn.RemoteAddr().String())
 			return
+		}
+	}
+}
+
+// msgQueue 消息队列处理
+func msgQueue() {
+	for {
+		result, err := rdb.MsgQueuePop(ctx)
+		if err != nil || len(result) < 2 {
+			continue
+		}
+		fullMsg := result[1]
+		parts := strings.SplitN(fullMsg, "!$|$|$!", 2) // 按照 "!$|$|$!" 分割
+		if len(parts) == 2 {
+			nickName := parts[0]
+			message := parts[1]
+			conn, err := myConn.getConnByNickName(nickName)
+			if err != nil {
+				continue
+			}
+			if message == "###PING" {
+				myConn.connections[conn].lastHeartTime = time.Now() // 更新最后心跳时间
+			} else {
+				console.add(message)
+				broadcastMsg.add(message)
+			}
 		}
 	}
 }

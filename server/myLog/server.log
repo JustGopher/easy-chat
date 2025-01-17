@@ -37,3 +37,42 @@
 {"level":"info","msg":"app run","time":"2025-01-15 21:49:49"}
 {"level":"info","msg":"app run","time":"2025-01-15 21:50:08"}
 {"level":"error","msg":"heart timeOut:127.0.0.1:61657","time":"2025-01-16 07:52:50"}
+{"level":"error","msg":"heart timeOut:127.0.0.1:61655","time":"2025-01-16 14:00:09"}
+{"level":"fatal","msg":"listen err=listen tcp 127.0.0.1:8088: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.","time":"2025-01-16 15:57:22"}
+{"level":"info","msg":"app run","time":"2025-01-16 15:57:50"}
+{"level":"info","msg":"app run","time":"2025-01-16 15:59:02"}
+{"level":"error","msg":"sendMessage failed, go:process for1{}, err = write tcp 127.0.0.1:8088-\u003e127.0.0.1:53770: wsasend: An existing connection was forcibly closed by the remote host.","time":"2025-01-16 16:02:46"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:03:11"}
+{"level":"error","msg":"heart timeOut:127.0.0.1:54110","time":"2025-01-16 16:04:57"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:06:07"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:07:46"}
+{"level":"error","msg":"heart timeOut:127.0.0.1:54817","time":"2025-01-16 16:09:45"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:12:07"}
+{"level":"error","msg":"heart timeOut:127.0.0.1:55294","time":"2025-01-16 16:13:59"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:15:58"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:17:26"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:18:00"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:20:01"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:21:20"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:22:24"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:23:01"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:40:22"}
+{"level":"info","msg":"app run","time":"2025-01-16 16:46:30"}
+{"level":"info","msg":"app run","time":"2025-01-16 20:56:35"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:11:04"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:19:02"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:21:35"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:22:11"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:22:42"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:23:14"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:23:36"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:25:44"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:26:35"}
+{"level":"info","msg":"app run","time":"2025-01-16 21:27:02"}
+{"level":"info","msg":"app run","time":"2025-01-17 14:04:55"}
+{"level":"error","msg":"排行榜为空","time":"2025-01-17 14:06:10"}
+{"level":"error","msg":"排行榜为空","time":"2025-01-17 14:06:18"}
+{"level":"error","msg":"排行榜为空","time":"2025-01-17 14:06:20"}
+{"level":"info","msg":"app run","time":"2025-01-17 14:07:27"}
+{"level":"error","msg":"排行榜为空","time":"2025-01-17 14:07:51"}
+{"level":"info","msg":"app run","time":"2025-01-17 14:15:02"}
