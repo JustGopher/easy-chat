@@ -19,26 +19,6 @@ import (
 	"time"
 )
 
-type Config struct {
-	App struct {
-		Host              string `ini:"host"`
-		Port              string `ini:"port"`
-		HeartbeatInterval int    `ini:"heartbeatInterval"`
-		TimeoutInterval   int    `ini:"timeoutInterval"`
-	}
-	MyLog struct {
-		File   string `ini:"file"`
-		Level  string `ini:"level"`
-		Format string `ini:"format"`
-	}
-	Redis struct {
-		Host string `ini:"host"`
-		Port string `ini:"port"`
-		Pwd  string `ini:"pwd"`
-		Db   int    `ini:"db"`
-	}
-}
-
 var (
 	myConn       *MyConn // 用于存储连接
 	myListener   MyListener
@@ -366,7 +346,6 @@ func main() {
 func waitInput() {
 	rd := bufio.NewReader(os.Stdin)
 	for {
-		//console.addNoline("> ")
 		line, err := rd.ReadString('\n')
 		if err != nil {
 			fmt.Println("readString err=", err)
@@ -451,6 +430,13 @@ func process(conn net.Conn) {
 	myConn.Add(conn, state)
 	console.add("有用户进入聊天室，用户昵称:" + nickName)
 	myConn.ShowList()
+
+	//添加用户到排行榜
+	err := rdb.AddScore(ctx, nickName)
+	if err != nil {
+		logger.Error("add user to rank failed,err:", err)
+	}
+	defer rdb.DelUserFromRank(ctx, nickName)
 
 	//广播欢迎语
 	broadcastMsg.add("Welcome " + myConn.connections[conn].nickName + " joined the chat!")
