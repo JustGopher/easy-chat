@@ -426,19 +426,19 @@ func process(conn net.Conn) {
 		loginTime:     time.Now(),
 		lastHeartTime: time.Now(),
 	}
-	//添加连接
+	// 添加连接
 	myConn.Add(conn, state)
 	console.add("有用户进入聊天室，用户昵称:" + nickName)
 	myConn.ShowList()
 
-	//添加用户到排行榜
+	// 添加用户到排行榜
 	err := rdb.AddScore(ctx, nickName)
 	if err != nil {
 		logger.Error("add user to rank failed,err:", err)
 	}
 	defer rdb.DelUserFromRank(ctx, nickName)
 
-	//广播欢迎语
+	// 广播欢迎语
 	broadcastMsg.add("Welcome " + myConn.connections[conn].nickName + " joined the chat!")
 
 	// 开启心跳检测
@@ -460,7 +460,6 @@ func process(conn net.Conn) {
 		if err != nil {
 			logger.Error(err.Error())
 		}
-		err = rdb.AddScore(ctx, nickName)
 	}
 }
 
@@ -498,10 +497,15 @@ func msgQueue() {
 				continue
 			}
 			if message == "###PING" {
-				myConn.connections[conn].lastHeartTime = time.Now() // 更新最后心跳时间
+				// 更新最后心跳时间
+				myConn.connections[conn].lastHeartTime = time.Now()
 			} else {
 				console.add(message)
 				broadcastMsg.add(message)
+				err = rdb.AddScore(ctx, nickName)
+				if err != nil {
+					logger.Error("add score failed,err:", err.Error())
+				}
 			}
 		}
 	}

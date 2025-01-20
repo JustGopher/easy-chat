@@ -59,7 +59,7 @@ func (r *RedisHandler) AddScore(ctx context.Context, nickName string) error {
 
 // ShowRank 查看分数排行榜
 func (r *RedisHandler) ShowRank(ctx context.Context) (string, error) {
-	zs, err := r.rdb.ZRangeWithScores(ctx, "easy-chat:user_activity", 0, -1).Result()
+	zs, err := r.rdb.ZRevRangeWithScores(ctx, "easy-chat:user_activity", 0, -1).Result()
 	if err != nil {
 		return "", errors.New("获取用户活跃度失败: " + err.Error())
 	}
