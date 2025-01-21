@@ -8,7 +8,7 @@ type Config struct {
 		TimeoutInterval   int    `ini:"timeoutInterval"`
 	}
 	MyLog struct {
-		File   string `ini:"file"`
+		Dir    string `ini:"dir"`
 		Level  string `ini:"level"`
 		Format string `ini:"format"`
 	}

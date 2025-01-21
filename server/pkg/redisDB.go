@@ -13,6 +13,7 @@ type RedisHandler struct {
 	rdb *redis.Client
 }
 
+// NewRedisHandler 创建 RedisHandler
 func NewRedisHandler(config object.Config) *RedisHandler {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     config.Redis.Host + ":" + config.Redis.Port,

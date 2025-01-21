@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	connList  *pkg.ConnList // 用于存储连接
+	connList  *pkg.ConnList
 	listener  *pkg.MyListener
 	console   *pkg.LocalMsg
 	broadcast *pkg.BroadcastMsg
@@ -204,7 +204,7 @@ func heartbeatChecker(conn net.Conn) {
 	for {
 		time.Sleep(time.Duration(config.App.HeartbeatInterval) * time.Second)
 		if !connList.IsExist(conn) {
-			return // 如果连接已经被删除，退出
+			return // 如果连接已经被删除，则退出
 		}
 		if time.Since(connList.Connections[conn].LastHeartTime) > time.Duration(config.App.TimeoutInterval)*time.Second {
 			console.Add("客户端超时未发送心跳包，断开连接:" + conn.RemoteAddr().String())

@@ -102,6 +102,7 @@ func (c *ConnList) GetConnByNickName(nickName string) (net.Conn, error) {
 	return nil, errors.New("no user")
 }
 
+// GetAllConn 获取所有连接
 func (c *ConnList) GetAllConn() map[net.Conn]*connState {
 	return c.Connections
 }

@@ -4,13 +4,15 @@ import (
 	"easy-chat/server/object"
 	"github.com/sirupsen/logrus"
 	"os"
+	"time"
 )
 
 // LogInit 日志初始化
 func LogInit(config object.Config) *logrus.Logger {
 	logger := logrus.New()
 	// 设置日志输出到 server.myLog
-	file, err := os.OpenFile(config.MyLog.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	fileName := time.Now().Format("/server-2006-01-02.log")
+	file, err := os.OpenFile(config.MyLog.Dir+fileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err == nil {
 		logger.Out = file
 	} else {
