@@ -2,13 +2,11 @@ package pkg
 
 import (
 	"fmt"
-	"sync"
 )
 
 // LocalMsg 本地消息
 type LocalMsg struct {
 	msg chan string
-	mu  sync.Mutex
 }
 
 // CreateLocalMsg 创建本地消息实例
@@ -20,9 +18,7 @@ func CreateLocalMsg() *LocalMsg {
 
 // Add 添加消息
 func (l *LocalMsg) Add(s string) {
-	l.mu.Lock()
 	l.msg <- s
-	l.mu.Unlock()
 }
 
 // Out 输出消息
