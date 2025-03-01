@@ -4,13 +4,11 @@ import (
 	"easy-chat/proto"
 	"errors"
 	"net"
-	"sync"
 )
 
 // BroadcastMsg 广播消息
 type BroadcastMsg struct {
 	msg chan string
-	mu  sync.Mutex
 }
 
 // CreateBroadcastMsg 创建广播消息处理
@@ -22,9 +20,7 @@ func CreateBroadcastMsg() *BroadcastMsg {
 
 // Add 添加广播消息
 func (bc *BroadcastMsg) Add(message string) {
-	bc.mu.Lock()
 	bc.msg <- message
-	bc.mu.Unlock()
 }
 
 // SendMessage 发送广播消息
